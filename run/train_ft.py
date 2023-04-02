@@ -137,8 +137,8 @@ def gen_points_filter_embeddings(dataset, visualizer, opt):
 
         if opt.vox_res > 0:
             xyz_world_all, sparse_grid_idx, sampled_pnt_idx = mvs_utils.construct_vox_points_closest(xyz_world_all.cuda() if len(xyz_world_all) < 99999999 else xyz_world_all[::(len(xyz_world_all)//99999999+1),...].cuda(), opt.vox_res)
-            points_vid = points_vid[sampled_pnt_idx,:]
-            confidence_filtered_all = confidence_filtered_all[sampled_pnt_idx]
+            points_vid = points_vid[sampled_pnt_idx.to(points_vid.device),:]
+            confidence_filtered_all = confidence_filtered_all[sampled_pnt_idx.to(confidence_filtered_all.device)]
             print("after voxelize:", xyz_world_all.shape, points_vid.shape)
             xyz_world_all = xyz_world_all.cuda()
 
@@ -632,6 +632,7 @@ def main():
             opt.resume_iter = resume_iter
             opt.is_train=True
             model = create_model(opt)
+            visualizer.print_details(f"Number of points: {model.neural_points.xyz.shape}")
         elif opt.load_points < 1:
             points_xyz_all, points_embedding_all, points_color_all, points_dir_all, points_conf_all, img_lst, c2ws_lst, w2cs_lst, intrinsics_all, HDWD_lst = gen_points_filter_embeddings(train_dataset, visualizer, opt)
             opt.resume_iter = opt.resume_iter if opt.resume_iter != "latest" else get_latest_epoch(opt.resume_dir)
@@ -828,6 +829,7 @@ def main():
     train_random_sample_size = opt.random_sample_size
     for epoch in range(epoch_count, opt.niter + opt.niter_decay + 1):
         epoch_start_time = time.time()
+        visualizer.print_details(f"!!!!!!!!! Number of points: {model.neural_points.xyz.shape}")
         for i, data in enumerate(data_loader):
             if opt.maximum_step is not None and total_steps >= opt.maximum_step:
                 break
@@ -943,6 +945,7 @@ def main():
                 model.update_learning_rate(opt=opt, total_steps=total_steps)
 
             if total_steps and total_steps % opt.print_freq == 0:
+                visualizer.print_details(f"------------Number of points: {model.neural_points.xyz.shape}")
                 if opt.show_tensorboard:
                     visualizer.plot_current_losses_with_tb(total_steps, losses)
                 visualizer.print_losses(total_steps)
@@ -977,24 +980,24 @@ def main():
                 model.opt.is_train = 1
                 del test_dataset
 
-            if total_steps == 10000 or (total_steps % opt.test_freq == 0 and total_steps < (opt.maximum_step - 1) and total_steps > 0):
-                torch.cuda.empty_cache()
-                test_dataset = create_test_dataset(test_opt, opt, total_steps, test_num_step=opt.test_num_step)
-                model.opt.is_train = 0
-                model.opt.no_loss = 1
-                with torch.no_grad():
-                    if opt.test_train == 0:
-                        test_psnr = test(model, test_dataset, Visualizer(test_opt), test_opt, test_bg_info, test_steps=total_steps, lpips=True)
-                    else:
-                        train_dataset.opt.random_sample = "no_crop"
-                        test_psnr = test(model, train_dataset, Visualizer(test_opt), test_opt, test_bg_info, test_steps=total_steps, lpips=True)
-                        train_dataset.opt.random_sample = opt.random_sample
-                model.opt.no_loss = 0
-                model.opt.is_train = 1
-                del test_dataset
-                best_iter = total_steps if test_psnr > best_PSNR else best_iter
-                best_PSNR = max(test_psnr, best_PSNR)
-                visualizer.print_details(f"test at iter {total_steps}, PSNR: {test_psnr}, best_PSNR: {best_PSNR}, best_iter: {best_iter}")
+            # if total_steps == 10000 or (total_steps % opt.test_freq == 0 and total_steps < (opt.maximum_step - 1) and total_steps > 0):
+            #     torch.cuda.empty_cache()
+            #     test_dataset = create_test_dataset(test_opt, opt, total_steps, test_num_step=opt.test_num_step)
+            #     model.opt.is_train = 0
+            #     model.opt.no_loss = 1
+            #     with torch.no_grad():
+            #         if opt.test_train == 0:
+            #             test_psnr = test(model, test_dataset, Visualizer(test_opt), test_opt, test_bg_info, test_steps=total_steps, lpips=True)
+            #         else:
+            #             train_dataset.opt.random_sample = "no_crop"
+            #             test_psnr = test(model, train_dataset, Visualizer(test_opt), test_opt, test_bg_info, test_steps=total_steps, lpips=True)
+            #             train_dataset.opt.random_sample = opt.random_sample
+            #     model.opt.no_loss = 0
+            #     model.opt.is_train = 1
+            #     del test_dataset
+            #     best_iter = total_steps if test_psnr > best_PSNR else best_iter
+            #     best_PSNR = max(test_psnr, best_PSNR)
+            #     visualizer.print_details(f"test at iter {total_steps}, PSNR: {test_psnr}, best_PSNR: {best_PSNR}, best_iter: {best_iter}")
             model.train()
 
         # try:
